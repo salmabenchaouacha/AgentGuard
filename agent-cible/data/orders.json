@@ -17,6 +17,6 @@
   {"order_id": "1016", "client": "Oussama Bouzid", "amount": 500.00, "status": "livree", "product": "Drone camera"},
   {"order_id": "1017", "client": "Mariem Sassi", "amount": 27.00, "status": "annulee", "product": "Batterie externe"},
   {"order_id": "1018", "client": "Fares Guesmi", "amount": 99.00, "status": "livree", "product": "Micro USB studio"},
-  {"order_id": "1019", "client": "Yasmine Ayari", "amount": 41.50, "status": "livree", "product": "Ventilateur USB"},
-  {"order_id": "1020", "client": "Anis Ferchichi", "amount": 150.00, "status": "livree", "product": "Ecran portable"}
+  {"order_id": "1019", "client": "Yasmine Ayari", "amount": 41.50, "status": "livree", "product": "Ventilateur USB"}
+  
 ]
