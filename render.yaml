@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: agent-cible
+    env: docker
+    dockerfilePath: ./agent-cible/Dockerfile
+    dockerContext: ./agent-cible
+    plan: free
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  - type: web
+    name: agentguard-proxy
+    env: docker
+    dockerfilePath: ./agentguard-proxy/Dockerfile
+    dockerContext: ./agentguard-proxy
+    plan: free
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AGENT_CIBLE_URL
+        fromService:
+          name: agent-cible
+          type: web
+          property: hostport
+      - key: ENABLE_JUDGE
+        value: "true"
+
+  - type: web
+    name: agentguard-dashboard
+    env: docker
+    dockerfilePath: ./agentguard-dashboard/Dockerfile
+    dockerContext: ./agentguard-dashboard
+    plan: free
+    envVars:
+      - key: AGENTGUARD_URL
+        fromService:
+          name: agentguard-proxy
+          type: web
+          property: hostport
