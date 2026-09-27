@@ -1,8 +1,7 @@
-cat > .gitignore << 'EOF'
 __pycache__/
 *.pyc
 .env
 *.db
 .venv/
 venv/
-EOF
+.env.example
