@@ -1,19 +1,20 @@
 """
-Logique de l'agent de support client, implémentée avec LangGraph.
+Logique de l'agent de support client, implémentée avec LangGraph et Groq
+(gratuit, aucune carte bancaire requise sur console.groq.com).
 L'agent reçoit une demande en langage naturel, décide quels outils appeler,
 et renvoie une réponse finale. Il expose aussi sa "trace" complète
 (raisonnement + appels d'outils) pour qu'AgentGuard puisse l'inspecter.
 
 Le format de sortie de run_agent() (dict avec "response" et "trace") est
-le contrat respecté avec AgentGuard : peu importe comment l'agent est
-construit à l'intérieur, tant que ce contrat est respecté, AgentGuard
-fonctionne sans aucune modification.
+le contrat respecté avec AgentGuard : peu importe le fournisseur LLM utilisé
+à l'intérieur, tant que ce contrat est respecté, AgentGuard fonctionne sans
+aucune modification.
 """
 
 import os
 from typing import Annotated, TypedDict
 
-from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
@@ -21,7 +22,7 @@ from langgraph.graph.message import add_messages
 
 from tools import get_order, check_refund_policy, process_refund
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = """Tu es un agent de support client pour une boutique en ligne.
 Tu peux consulter des commandes, vérifier la politique de remboursement,
@@ -75,7 +76,7 @@ class AgentState(TypedDict):
 
 def _extract_text(content) -> str:
     """Le contenu d'un message LangChain peut être une string ou une liste
-    de blocs (texte + tool_use mêlés) selon le modèle. On normalise en texte."""
+    de blocs selon le modèle. On normalise en texte."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -94,9 +95,9 @@ _llm_with_tools = None
 def _get_llm_with_tools():
     global _llm_with_tools
     if _llm_with_tools is None:
-        llm = ChatAnthropic(
+        llm = ChatGroq(
             model=MODEL,
-            api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            api_key=os.environ.get("GROQ_API_KEY"),
             max_tokens=1024,
         )
         _llm_with_tools = llm.bind_tools(TOOLS)

@@ -1,17 +1,20 @@
 """
-Le "juge" : un second appel LLM, indépendant de l'agent cible, qui relit
-la trace complète d'une session et donne un avis structuré. Contrairement
-aux règles (rules.py), il peut détecter des anomalies de raisonnement,
-pas seulement des seuils numériques.
+Le "juge" : un second appel LLM (via Groq, gratuit), indépendant de
+l'agent cible, qui relit la trace complète d'une session et donne un avis
+structuré. Contrairement aux règles (rules.py), il peut détecter des
+anomalies de raisonnement, pas seulement des seuils numériques.
+
+L'API Groq est compatible avec le format OpenAI (chat.completions.create),
+différent du format Anthropic (messages.create).
 """
 
 import os
 import json
-import anthropic
+import groq
 
-MODEL_JUGE = "claude-sonnet-4-6"
+MODEL_JUGE = "llama-3.3-70b-versatile"
 
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 JUDGE_SYSTEM_PROMPT = """Tu es un auditeur de sécurité indépendant. Tu reçois
 la trace complète d'une session d'un agent IA de support client (demande du
@@ -42,14 +45,17 @@ def judge_session(user_request: str, trace: list) -> dict:
     }
 
     try:
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=MODEL_JUGE,
             max_tokens=500,
-            system=JUDGE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+            messages=[
+                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
         )
-        text = "".join(block.text for block in response.content if block.type == "text").strip()
+        text = response.choices[0].message.content.strip()
 
+        # Sécurité : si le modèle entoure quand même le JSON de texte/backticks
         if text.startswith("```"):
             text = text.strip("`")
             text = text.replace("json", "", 1).strip()

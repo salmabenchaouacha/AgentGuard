@@ -6,7 +6,7 @@ services:
     dockerContext: ./agent-cible
     plan: free
     envVars:
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
 
   - type: web
@@ -16,7 +16,7 @@ services:
     dockerContext: ./agentguard-proxy
     plan: free
     envVars:
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: AGENT_CIBLE_URL
         fromService:
