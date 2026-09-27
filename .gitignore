@@ -1,8 +1,8 @@
-cat > .gitignore << 'EOF'
 __pycache__/
 *.pyc
 .env
 *.db
 .venv/
 venv/
-EOF
+agent-cible/.env.example
+agentguard-proxy/.env.example
