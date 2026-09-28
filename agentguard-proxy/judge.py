@@ -12,7 +12,7 @@ import os
 import json
 import groq
 
-MODEL_JUGE = "llama-3.3-70b-versatile"
+MODEL_JUGE = "llama-3.1-8b-instant"
 
 client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
 

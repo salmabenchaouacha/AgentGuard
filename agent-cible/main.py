@@ -4,7 +4,8 @@ Ce service est volontairement "naïf" : il ne fait aucune surveillance
 lui-même. C'est le rôle d'AgentGuard, déployé comme un service séparé,
 qui se place devant lui.
 """
-
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI
 from pydantic import BaseModel
 from agent import run_agent

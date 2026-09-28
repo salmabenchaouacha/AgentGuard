@@ -3,4 +3,4 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 langgraph==0.2.34
 langchain-groq==0.2.1
-langchain-core==0.3.10
+langchain-core==0.3.15

@@ -7,7 +7,8 @@ passer, d'exiger une validation humaine, ou de bloquer la réponse.
 C'est un service totalement indépendant de l'agent cible : il ne connaît
 que son URL, rien de son code interne.
 """
-
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import httpx
 from fastapi import FastAPI
