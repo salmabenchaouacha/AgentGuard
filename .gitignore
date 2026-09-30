@@ -4,5 +4,5 @@ __pycache__/
 *.db
 .venv/
 venv/
-agent-cible/.env.example
-agentguard-proxy/.env.example
+agent-cible/.env
+agentguard-proxy/.env
