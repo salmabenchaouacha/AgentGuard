@@ -22,7 +22,7 @@ from langgraph.graph.message import add_messages
 
 from tools import get_order, check_refund_policy, process_refund
 
-MODEL = "llama-3.1-8b-instant"
+MODEL = "openai/gpt-oss-20b"
 
 SYSTEM_PROMPT = """Tu es un agent de support client pour une boutique en ligne.
 Tu peux consulter des commandes, vérifier la politique de remboursement,
