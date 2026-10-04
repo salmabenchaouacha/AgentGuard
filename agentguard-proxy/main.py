@@ -29,7 +29,8 @@ def _normalize_url(url: str) -> str:
     return f"https://{url}"
 
 
-AGENT_CIBLE_URL = _normalize_url(os.environ.get("AGENT_CIBLE_URL", "http://localhost:8001"))ENABLE_JUDGE = os.environ.get("ENABLE_JUDGE", "true").lower() == "true"
+AGENT_CIBLE_URL = _normalize_url(os.environ.get("AGENT_CIBLE_URL", "http://localhost:8001"))
+ENABLE_JUDGE = os.environ.get("ENABLE_JUDGE", "true").lower() == "true"
 
 app = FastAPI(title="AgentGuard - Proxy de surveillance")
 
