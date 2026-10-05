@@ -19,10 +19,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: AGENT_CIBLE_URL
-        fromService:
-          name: agent-cible
-          type: web
-          property: hostport
+        value: "https://agent-cible.onrender.com"
       - key: ENABLE_JUDGE
         value: "true"
 
@@ -34,7 +31,4 @@ services:
     plan: free
     envVars:
       - key: AGENTGUARD_URL
-        fromService:
-          name: agentguard-proxy
-          type: web
-          property: hostport
+        value: "https://agentguard-proxy-xib5.onrender.com"
