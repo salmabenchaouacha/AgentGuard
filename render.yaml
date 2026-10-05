@@ -18,6 +18,8 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: AGENT_CIBLE_URL
         value: "https://agent-cible.onrender.com"
       - key: ENABLE_JUDGE

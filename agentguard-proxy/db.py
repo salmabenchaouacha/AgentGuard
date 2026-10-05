@@ -2,86 +2,134 @@
 Module de base de données pour AgentGuard.
 Stocke les sessions, les étapes (trace), les alertes déclenchées par les
 règles, et les jugements rendus par le juge IA.
+
+Deux moteurs possibles, choisis automatiquement :
+- PostgreSQL si la variable d'environnement DATABASE_URL est définie
+  (production : les données survivent aux redéploiements et aux mises en veille) ;
+- SQLite sinon (développement local, rien à installer).
 """
 
-import sqlite3
 import json
 import os
+import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "agentguard.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL)
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agentguard.db")
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
+# Seule différence de schéma entre les deux moteurs : la clé auto-incrémentée.
+_AUTO_ID = "SERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+_SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_request TEXT,
+        started_at TEXT,
+        status TEXT DEFAULT 'en_cours'
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS steps (
+        id {_AUTO_ID},
+        session_id TEXT,
+        step_number INTEGER,
+        reasoning TEXT,
+        tool_called TEXT,
+        tool_params TEXT,
+        tool_result TEXT,
+        timestamp TEXT
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS alerts (
+        id {_AUTO_ID},
+        session_id TEXT,
+        step_number INTEGER,
+        rule_triggered TEXT,
+        severity TEXT,
+        created_at TEXT
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS judgments (
+        id {_AUTO_ID},
+        session_id TEXT,
+        anomalie_detectee INTEGER,
+        raison TEXT,
+        gravite TEXT,
+        action_recommandee TEXT,
+        created_at TEXT
+    )
+    """,
+]
 
 
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@contextmanager
+def _cursor():
+    """Ouvre une connexion, valide (commit) si tout va bien, puis la ferme."""
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=15)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+    try:
+        yield cur
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _sql(query: str) -> str:
+    """Les requêtes sont écrites avec '?' (SQLite) ; Postgres attend '%s'."""
+    return query.replace("?", "%s") if USE_POSTGRES else query
+
+
+def _execute(query: str, params: tuple = ()) -> None:
+    with _cursor() as cur:
+        cur.execute(_sql(query), params)
+
+
+def _fetch_all(query: str, params: tuple = ()) -> list[dict]:
+    with _cursor() as cur:
+        cur.execute(_sql(query), params)
+        return [dict(row) for row in cur.fetchall()]
 
 
 def init_db():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            user_request TEXT,
-            started_at TEXT,
-            status TEXT DEFAULT 'en_cours'
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS steps (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            step_number INTEGER,
-            reasoning TEXT,
-            tool_called TEXT,
-            tool_params TEXT,
-            tool_result TEXT,
-            timestamp TEXT
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            step_number INTEGER,
-            rule_triggered TEXT,
-            severity TEXT,
-            created_at TEXT
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS judgments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            anomalie_detectee INTEGER,
-            raison TEXT,
-            gravite TEXT,
-            action_recommandee TEXT,
-            created_at TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with _cursor() as cur:
+        for statement in _SCHEMA:
+            cur.execute(statement)
 
 
 def create_session(user_request: str) -> str:
     session_id = str(uuid.uuid4())
-    conn = get_connection()
-    conn.execute(
+    _execute(
         "INSERT INTO sessions (id, user_request, started_at, status) VALUES (?, ?, ?, ?)",
-        (session_id, user_request, datetime.now(timezone.utc).isoformat(), "en_cours"),
+        (session_id, user_request, _now(), "en_cours"),
     )
-    conn.commit()
-    conn.close()
     return session_id
 
 
 def log_step(session_id: str, step: dict):
-    conn = get_connection()
-    conn.execute(
+    _execute(
         """INSERT INTO steps
            (session_id, step_number, reasoning, tool_called, tool_params, tool_result, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -92,27 +140,21 @@ def log_step(session_id: str, step: dict):
             step.get("tool_called"),
             json.dumps(step.get("tool_params")) if step.get("tool_params") else None,
             json.dumps(step.get("tool_result")) if step.get("tool_result") else None,
-            datetime.now(timezone.utc).isoformat(),
+            _now(),
         ),
     )
-    conn.commit()
-    conn.close()
 
 
 def log_alert(session_id: str, step_number: int, rule_triggered: str, severity: str):
-    conn = get_connection()
-    conn.execute(
+    _execute(
         """INSERT INTO alerts (session_id, step_number, rule_triggered, severity, created_at)
            VALUES (?, ?, ?, ?, ?)""",
-        (session_id, step_number, rule_triggered, severity, datetime.now(timezone.utc).isoformat()),
+        (session_id, step_number, rule_triggered, severity, _now()),
     )
-    conn.commit()
-    conn.close()
 
 
 def log_judgment(session_id: str, judgment: dict):
-    conn = get_connection()
-    conn.execute(
+    _execute(
         """INSERT INTO judgments
            (session_id, anomalie_detectee, raison, gravite, action_recommandee, created_at)
            VALUES (?, ?, ?, ?, ?, ?)""",
@@ -122,47 +164,32 @@ def log_judgment(session_id: str, judgment: dict):
             judgment.get("raison"),
             judgment.get("gravite"),
             judgment.get("action_recommandee"),
-            datetime.now(timezone.utc).isoformat(),
+            _now(),
         ),
     )
-    conn.commit()
-    conn.close()
 
 
 def update_session_status(session_id: str, status: str):
-    conn = get_connection()
-    conn.execute("UPDATE sessions SET status = ? WHERE id = ?", (status, session_id))
-    conn.commit()
-    conn.close()
+    _execute("UPDATE sessions SET status = ? WHERE id = ?", (status, session_id))
 
 
 def get_sessions(limit: int = 50):
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    return _fetch_all("SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,))
 
 
 def get_session_detail(session_id: str):
-    conn = get_connection()
-    session = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    steps = conn.execute(
-        "SELECT * FROM steps WHERE session_id = ? ORDER BY step_number", (session_id,)
-    ).fetchall()
-    alerts = conn.execute(
-        "SELECT * FROM alerts WHERE session_id = ? ORDER BY step_number", (session_id,)
-    ).fetchall()
-    judgments = conn.execute(
-        "SELECT * FROM judgments WHERE session_id = ?", (session_id,)
-    ).fetchall()
-    conn.close()
-    if not session:
+    sessions = _fetch_all("SELECT * FROM sessions WHERE id = ?", (session_id,))
+    if not sessions:
         return None
     return {
-        "session": dict(session),
-        "steps": [dict(s) for s in steps],
-        "alerts": [dict(a) for a in alerts],
-        "judgments": [dict(j) for j in judgments],
+        "session": sessions[0],
+        "steps": _fetch_all(
+            "SELECT * FROM steps WHERE session_id = ? ORDER BY step_number", (session_id,)
+        ),
+        "alerts": _fetch_all(
+            "SELECT * FROM alerts WHERE session_id = ? ORDER BY step_number", (session_id,)
+        ),
+        "judgments": _fetch_all(
+            "SELECT * FROM judgments WHERE session_id = ? ORDER BY id", (session_id,)
+        ),
     }
