@@ -10,6 +10,7 @@ que son URL, rien de son code interne.
 from dotenv import load_dotenv
 load_dotenv()
 import os
+import time
 import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -32,6 +33,13 @@ def _normalize_url(url: str) -> str:
 AGENT_CIBLE_URL = _normalize_url(os.environ.get("AGENT_CIBLE_URL", "http://localhost:8001"))
 ENABLE_JUDGE = os.environ.get("ENABLE_JUDGE", "true").lower() == "true"
 
+# Réveil de l'agent cible : sur l'offre gratuite de Render, un service endormi
+# répond 502/503 pendant son démarrage (30 à 60 secondes). On réessaie donc
+# quelques fois avant d'abandonner.
+RETRY_STATUS_CODES = {502, 503, 504}
+MAX_ATTEMPTS = int(os.environ.get("AGENT_MAX_ATTEMPTS", "6"))
+RETRY_DELAY_SECONDS = float(os.environ.get("AGENT_RETRY_DELAY", "10"))
+
 app = FastAPI(title="AgentGuard - Proxy de surveillance")
 
 
@@ -49,6 +57,42 @@ def health():
     return {"status": "ok", "service": "agentguard-proxy", "agent_cible_url": AGENT_CIBLE_URL}
 
 
+def _call_agent(message: str) -> dict:
+    """
+    Appelle l'agent cible, en réessayant tant qu'il n'est pas joignable.
+
+    On ne réessaie QUE dans les cas où la requête n'a pas été traitée par
+    l'agent : connexion impossible, ou erreur de passerelle (502/503/504).
+    Un timeout de lecture n'est volontairement pas réessayé : l'agent a pu
+    recevoir la requête et exécuter un outil, et la rejouer risquerait de
+    déclencher l'action une deuxième fois.
+    """
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            resp = httpx.post(
+                f"{AGENT_CIBLE_URL}/query",
+                json={"message": message},
+                timeout=60.0,
+            )
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            last_error = e
+        else:
+            if resp.status_code not in RETRY_STATUS_CODES:
+                resp.raise_for_status()
+                return resp.json()
+            last_error = RuntimeError(
+                f"L'agent cible a répondu {resp.status_code} "
+                f"après {attempt} tentative(s)."
+            )
+
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(RETRY_DELAY_SECONDS)
+
+    raise last_error
+
+
 @app.post("/agent/query")
 def query(request: QueryRequest):
     """
@@ -58,13 +102,7 @@ def query(request: QueryRequest):
     session_id = db.create_session(request.message)
 
     try:
-        resp = httpx.post(
-            f"{AGENT_CIBLE_URL}/query",
-            json={"message": request.message},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        agent_result = resp.json()
+        agent_result = _call_agent(request.message)
     except Exception as e:
         db.update_session_status(session_id, "erreur")
         return {
