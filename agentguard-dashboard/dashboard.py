@@ -7,6 +7,7 @@ pouvoir fonctionner même quand les services sont déployés séparément.
 import html
 import json
 import os
+import time
 
 import httpx
 import streamlit as st
@@ -14,6 +15,10 @@ import streamlit as st
 AGENTGUARD_URL = os.environ.get("AGENTGUARD_URL", "http://localhost:8000").rstrip("/")
 QUERY_TIMEOUT = 180  # le proxy peut attendre le réveil de l'agent cible
 READ_TIMEOUT = 30
+# Réveil du proxy : sur l'offre gratuite de Render, un service endormi répond
+# par une page d'attente (502/503) pendant 30 à 60 secondes.
+WAKE_ATTEMPTS = 8
+WAKE_DELAY = 8
 
 STATUS = {
     "ok": {"label": "OK", "color": "#34D399", "icon": "🟢"},
@@ -154,6 +159,30 @@ def rerun() -> None:
     (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)()
 
 
+def api_get(path: str):
+    """
+    GET sur l'API du proxy, en patientant s'il est en train de se réveiller.
+    Une lecture peut être rejouée sans risque, contrairement à l'envoi d'une demande.
+    """
+    notice = st.empty()
+    last_error = "erreur inconnue"
+    try:
+        for attempt in range(WAKE_ATTEMPTS):
+            try:
+                resp = httpx.get(f"{AGENTGUARD_URL}{path}", timeout=READ_TIMEOUT)
+                if resp.status_code < 500:
+                    return resp.json()
+                last_error = f"le proxy a répondu {resp.status_code}"
+            except (httpx.HTTPError, ValueError) as e:
+                last_error = str(e) or type(e).__name__
+            if attempt < WAKE_ATTEMPTS - 1:
+                notice.info("⏳ Le proxy se réveille, un instant… (jusqu'à une minute)")
+                time.sleep(WAKE_DELAY)
+        raise RuntimeError(last_error)
+    finally:
+        notice.empty()
+
+
 def badge(status: str) -> str:
     info = STATUS.get(status, {"label": status or "?", "color": "#94A3B8"})
     color = info["color"]
@@ -184,7 +213,7 @@ st.session_state.setdefault("flash", None)
 
 fetch_error = None
 try:
-    sessions = httpx.get(f"{AGENTGUARD_URL}/sessions", timeout=READ_TIMEOUT).json()
+    sessions = api_get("/sessions")
     if not isinstance(sessions, list):
         sessions = []
 except Exception as e:  # noqa: BLE001
@@ -314,7 +343,7 @@ with right:
     selected = st.session_state.selected
     if selected:
         try:
-            detail = httpx.get(f"{AGENTGUARD_URL}/sessions/{selected}", timeout=READ_TIMEOUT).json()
+            detail = api_get(f"/sessions/{selected}")
         except Exception as e:  # noqa: BLE001
             st.error(f"Erreur : {e}")
         if detail and "session" not in detail:
