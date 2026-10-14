@@ -409,7 +409,7 @@ with right:
             render('<div class="ag-section">AI judge verdict</div>')
             for j in judgments:
                 gravity = str(j.get("gravite", "")).lower()
-                color = SEVERITY_COLORS.get(gravity, "#94A3B8")
+                color = SEVERITY_COLORS.get(gravity, "#BBC9DD")
                 anomaly = bool(j.get("anomalie_detectee"))
                 anomaly_color = "#F87171" if anomaly else "#34D399"
                 render(
