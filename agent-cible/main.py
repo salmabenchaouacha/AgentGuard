@@ -1,8 +1,7 @@
 """
-API de l'agent cible (support client).
-Ce service est volontairement "naïf" : il ne fait aucune surveillance
-lui-même. C'est le rôle d'AgentGuard, déployé comme un service séparé,
-qui se place devant lui.
+Target agent API (customer support).
+This service is deliberately "naive": it does no monitoring itself.
+That is the job of AgentGuard, deployed as a separate service in front of it.
 """
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,7 +9,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from agent import run_agent
 
-app = FastAPI(title="Agent Cible - Support Client")
+app = FastAPI(title="Target Agent - Customer Support")
 
 
 class QueryRequest(BaseModel):
@@ -25,8 +24,8 @@ def health():
 @app.post("/query")
 def query(request: QueryRequest):
     """
-    Reçoit une demande client, fait tourner l'agent, renvoie la réponse
-    finale ainsi que la trace complète des étapes (pour supervision externe).
+    Receive a customer request, run the agent, and return the final answer
+    together with the full trace of steps (for external monitoring).
     """
     result = run_agent(request.message)
     return result

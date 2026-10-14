@@ -1,13 +1,19 @@
 """
-Outils métier utilisés par l'agent de support client.
-Chaque fonction simule une action réelle (pas de vraie base de données
-ni de vrai virement bancaire) mais respecte une vraie logique métier.
+Business tools used by the customer-support agent.
+Each function simulates a real action (no real database, no real bank
+transfer) but follows real business logic.
+
+Note: order statuses ("livree", "annulee", "remboursee") come from
+data/orders.json and are kept as-is.
 """
 
 import json
 import os
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "orders.json")
+
+# Only delivered orders can be refunded.
+STATUS_DELIVERED = "livree"
 
 
 def _load_orders():
@@ -16,56 +22,56 @@ def _load_orders():
 
 
 def get_order(order_id: str) -> dict:
-    """Retourne les détails d'une commande à partir de son identifiant."""
+    """Return the details of an order from its ID."""
     orders = _load_orders()
     for order in orders:
         if order["order_id"] == str(order_id):
             return order
-    return {"error": f"Commande {order_id} introuvable"}
+    return {"error": f"Order {order_id} not found"}
 
 
 def check_refund_policy(order_id: str, amount_requested: float) -> dict:
     """
-    Vérifie si un remboursement demandé respecte la politique de l'entreprise.
-    Règles :
-      - la commande doit exister
-      - la commande doit être au statut 'livree'
-      - le montant demandé ne peut pas dépasser le montant de la commande
+    Check whether a requested refund complies with the company policy.
+    Rules:
+      - the order must exist
+      - the order must be delivered
+      - the requested amount cannot exceed the order amount
     """
     order = get_order(order_id)
     if "error" in order:
-        return {"autorise": False, "raison": order["error"]}
+        return {"authorized": False, "reason": order["error"]}
 
-    if order["status"] != "livree":
+    if order["status"] != STATUS_DELIVERED:
         return {
-            "autorise": False,
-            "raison": f"La commande est au statut '{order['status']}', "
-                      f"seul le statut 'livree' permet un remboursement",
+            "authorized": False,
+            "reason": f"The order status is '{order['status']}'; only delivered "
+                      f"orders ('{STATUS_DELIVERED}') can be refunded",
         }
 
     if amount_requested > order["amount"]:
         return {
-            "autorise": False,
-            "raison": f"Montant demandé ({amount_requested}) supérieur au "
-                      f"montant de la commande ({order['amount']})",
+            "authorized": False,
+            "reason": f"Requested amount ({amount_requested}) exceeds the "
+                      f"order amount ({order['amount']})",
         }
 
-    return {"autorise": True, "raison": "Remboursement conforme à la politique"}
+    return {"authorized": True, "reason": "Refund complies with the policy"}
 
 
 def process_refund(order_id: str, amount: float) -> dict:
     """
-    Simule l'exécution d'un remboursement. Ne fait aucune vraie transaction,
-    se contente de renvoyer une confirmation. C'est volontairement une
-    fonction 'sensible' : c'est celle qu'AgentGuard doit surveiller de près.
+    Simulate a refund. No real transaction happens; it only returns a
+    confirmation. This is deliberately the 'sensitive' function: the one
+    AgentGuard must watch closely.
     """
     order = get_order(order_id)
     if "error" in order:
-        return {"succes": False, "raison": order["error"]}
+        return {"success": False, "reason": order["error"]}
 
     return {
-        "succes": True,
+        "success": True,
         "order_id": order_id,
-        "montant_rembourse": amount,
-        "message": f"Remboursement de {amount} effectué pour la commande {order_id}",
+        "refunded_amount": amount,
+        "message": f"Refund of {amount} processed for order {order_id}",
     }

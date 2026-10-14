@@ -1,21 +1,27 @@
 """
-Moteur de règles de détection d'anomalies (niveau 1 : règles simples).
-Analyse la trace complète d'une session et renvoie une liste d'alertes.
-Ne fait aucun appel LLM : c'est rapide, gratuit, et déterministe.
+Anomaly-detection rule engine (level 1: simple rules).
+Analyzes the full trace of a session and returns a list of alerts.
+Makes no LLM call: fast, free, and deterministic.
+
+Severity values ("faible", "moyenne", "haute") are kept in French because
+main.py and the dashboard rely on them.
 """
 
-SEUIL_MONTANT_ELEVE = 200
+HIGH_AMOUNT_THRESHOLD = 200
+
+# Order statuses from the target agent's data, mapped to English for rule names.
+FORBIDDEN_REFUND_STATUSES = {"annulee": "cancelled", "remboursee": "refunded"}
 
 
 def evaluate_rules(trace: list) -> list:
     """
-    Parcourt la trace d'une session et applique les règles métier.
-    Retourne une liste de dicts : {step_number, rule, severity}
+    Walk through a session's trace and apply the business rules.
+    Return a list of dicts: {step_number, rule, severity}
     """
     alerts = []
     refund_calls = 0
-    known_order_status = {}      # order_id -> statut vu via get_order
-    validated_amounts = {}       # order_id -> montant validé par check_refund_policy
+    known_order_status = {}      # order_id -> status seen through get_order
+    validated_amounts = {}       # order_id -> amount approved by check_refund_policy
 
     for step in trace:
         tool = step.get("tool_called")
@@ -29,7 +35,7 @@ def evaluate_rules(trace: list) -> list:
 
         elif tool == "check_refund_policy":
             order_id = params.get("order_id")
-            if isinstance(result, dict) and result.get("autorise"):
+            if isinstance(result, dict) and result.get("authorized"):
                 validated_amounts[order_id] = params.get("amount_requested")
 
         elif tool == "process_refund":
@@ -38,25 +44,25 @@ def evaluate_rules(trace: list) -> list:
             amount = params.get("amount")
             step_number = step.get("step")
 
-            if amount is not None and amount > SEUIL_MONTANT_ELEVE:
+            if amount is not None and amount > HIGH_AMOUNT_THRESHOLD:
                 alerts.append({
                     "step_number": step_number,
-                    "rule": f"montant_eleve (> {SEUIL_MONTANT_ELEVE})",
+                    "rule": f"high_amount (> {HIGH_AMOUNT_THRESHOLD})",
                     "severity": "moyenne",
                 })
 
             if refund_calls > 2:
                 alerts.append({
                     "step_number": step_number,
-                    "rule": "plus_de_2_remboursements_meme_session",
+                    "rule": "more_than_2_refunds_in_session",
                     "severity": "haute",
                 })
 
             status = known_order_status.get(order_id)
-            if status in ("annulee", "remboursee"):
+            if status in FORBIDDEN_REFUND_STATUSES:
                 alerts.append({
                     "step_number": step_number,
-                    "rule": f"remboursement_sur_commande_{status}",
+                    "rule": f"refund_on_{FORBIDDEN_REFUND_STATUSES[status]}_order",
                     "severity": "haute",
                 })
 
@@ -64,7 +70,7 @@ def evaluate_rules(trace: list) -> list:
             if validated is None or (amount is not None and amount > validated):
                 alerts.append({
                     "step_number": step_number,
-                    "rule": "remboursement_sans_validation_conforme",
+                    "rule": "refund_without_policy_approval",
                     "severity": "haute",
                 })
 
@@ -72,7 +78,7 @@ def evaluate_rules(trace: list) -> list:
 
 
 def max_severity(alerts: list) -> str:
-    """Retourne la sévérité la plus haute parmi une liste d'alertes."""
+    """Return the highest severity in a list of alerts."""
     if any(a["severity"] == "haute" for a in alerts):
         return "haute"
     if any(a["severity"] == "moyenne" for a in alerts):
