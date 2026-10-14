@@ -126,7 +126,6 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', system-ui, sans-serif
 .ag-chip-final { background: rgba(52, 211, 153, .12); color: #6EE7B7; border-color: rgba(52, 211, 153, .3); }
 .ag-reason { color: var(--ag-text); font-size: 13px; line-height: 1.5; margin-top: 6px; }
 .ag-k { font-size: 10.5px; color: var(--ag-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 8px 0 3px; }
-.ag-io { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .stMarkdown pre.ag-pre, pre.ag-pre {
   font-family: 'JetBrains Mono', monospace !important; font-size: 11.5px !important; line-height: 1.45 !important;
   background: var(--ag-code-bg) !important; color: var(--ag-code-text) !important;
@@ -162,9 +161,36 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', system-ui, sans-serif
   border-color: var(--ag-accent) !important; box-shadow: 0 0 0 1px var(--ag-accent) !important;
 }
 
+/* Dark widgets, even if .streamlit/config.toml is not loaded */
+.stApp, .stApp p, .stApp label, .stApp span { color: var(--ag-text); }
+.stButton > button[kind="secondary"], .stButton > button[data-testid="stBaseButton-secondary"] {
+  background-color: var(--ag-surface) !important; color: var(--ag-text) !important; border-color: var(--ag-border) !important;
+}
+.stButton > button[kind="secondary"]:hover, .stButton > button[data-testid="stBaseButton-secondary"]:hover {
+  background-color: var(--ag-surface-2) !important; border-color: var(--ag-accent) !important;
+}
+[data-baseweb="textarea"], [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="select"] > div {
+  background-color: var(--ag-surface) !important; border-color: var(--ag-border) !important;
+}
+.stTextArea textarea, .stTextInput input, [data-baseweb="select"] * {
+  background-color: transparent !important; color: var(--ag-text) !important; caret-color: var(--ag-text);
+}
+.stTextArea textarea::placeholder, .stTextInput input::placeholder { color: var(--ag-muted) !important; opacity: 1; }
+[data-baseweb="select"] svg { fill: var(--ag-muted) !important; }
+[data-baseweb="popover"] > div, [data-baseweb="popover"] ul, [role="listbox"] {
+  background-color: var(--ag-surface) !important; border: 1px solid var(--ag-border) !important;
+}
+[data-baseweb="popover"] li, [role="option"] { background-color: transparent !important; color: var(--ag-text) !important; }
+[data-baseweb="popover"] li:hover, [role="option"]:hover, [role="option"][aria-selected="true"] {
+  background-color: var(--ag-surface-2) !important;
+}
+[data-testid="stAlert"] { background-color: var(--ag-surface) !important; border: 1px solid var(--ag-border); border-radius: 10px; }
+[data-testid="stAlert"] * { color: var(--ag-text) !important; }
+[data-testid="stSpinner"] * { color: var(--ag-muted) !important; }
+
 @media (max-width: 900px) {
   .ag-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ag-verdict-grid, .ag-io { grid-template-columns: 1fr; }
+  .ag-verdict-grid { grid-template-columns: 1fr; }
 }
 </style>"""
 
@@ -473,10 +499,8 @@ with right:
                     body += f'<div class="ag-reason">{esc(step["reasoning"])}</div>'
                 if tool:
                     body += (
-                        '<div class="ag-io">'
-                        f'<div><div class="ag-k">Parameters</div><pre class="ag-pre">{esc_code(step.get("tool_params"))}</pre></div>'
-                        f'<div><div class="ag-k">Result</div><pre class="ag-pre">{esc_code(step.get("tool_result"))}</pre></div>'
-                        '</div>'
+                        f'<div class="ag-k">Parameters</div><pre class="ag-pre">{esc_code(step.get("tool_params"))}</pre>'
+                        f'<div class="ag-k">Result</div><pre class="ag-pre">{esc_code(step.get("tool_result"))}</pre>'
                     )
                 timeline += (
                     '<div class="ag-step"><div class="ag-rail">'
