@@ -204,7 +204,7 @@ def esc(value) -> str:
     return html.escape(text).replace("$", "&#36;").replace("\n", "<br>")
 
 
-def esc_code(value) -> str:
+def esc_code(value, compact: bool = False) -> str:
     """Like esc(), but keeps line breaks (for an .ag-pre block).
     Short JSON stays on one line; long JSON is indented."""
     if value is None:
@@ -217,7 +217,7 @@ def esc_code(value) -> str:
             data = None
     if isinstance(data, (dict, list)):
         text = json.dumps(data, ensure_ascii=False)
-        if len(text) > 70:
+        if len(text) > 70 and not compact:
             text = json.dumps(data, ensure_ascii=False, indent=2)
     else:
         text = str(value)
@@ -352,7 +352,8 @@ if total:
         for key in ("ok", "alerte", "bloque", "erreur", "en_cours")
         if counts[key]
     )
-render(f'<div class="ag-kpis">{kpi_html}</div><div class="ag-bar">{bar_html}</div>')
+if not demo:
+    render(f'<div class="ag-kpis">{kpi_html}</div><div class="ag-bar">{bar_html}</div>')
 
 # ----------------------------------------------------------------- layout
 
@@ -457,6 +458,10 @@ with right:
         else:
             summary_col, traj_col = st.container(), st.container()
 
+        # In demo layout the final answer goes under the verdict, where there is room.
+        final_steps = [st_ for st_ in steps if not st_.get("tool_called")] if demo else []
+        timeline_steps = [st_ for st_ in steps if st_.get("tool_called")] if demo else steps
+
         with summary_col:
             render(
                 '<div class="ag-card ag-card-accent">'
@@ -502,13 +507,20 @@ with right:
                         '</div>'
                     )
 
+            for fs in final_steps:
+                render(
+                    '<div class="ag-section">Agent answer to the customer</div>'
+                    '<div class="ag-card"><span class="ag-chip ag-chip-final">final answer</span>'
+                    f'<div class="ag-reason">{esc_text(fs.get("reasoning"))}</div></div>'
+                )
+
         with traj_col:
             render(f'<div class="ag-section">Agent trajectory · {len(steps)} step(s)</div>')
             if not steps:
                 render('<div class="ag-empty">No steps recorded for this session.</div>')
             else:
                 timeline = ""
-                for step in steps:
+                for step in timeline_steps:
                     tool = step.get("tool_called")
                     chip = (
                         f'<span class="ag-chip">{esc(tool)}</span>'
@@ -520,8 +532,8 @@ with right:
                         body += f'<div class="ag-reason">{esc_text(step["reasoning"])}</div>'
                     if tool:
                         body += (
-                            f'<div class="ag-k">Parameters</div><div class="ag-pre">{esc_code(step.get("tool_params"))}</div>'
-                            f'<div class="ag-k">Result</div><div class="ag-pre">{esc_code(step.get("tool_result"))}</div>'
+                            f'<div class="ag-k">Parameters</div><div class="ag-pre">{esc_code(step.get("tool_params"), demo)}</div>'
+                            f'<div class="ag-k">Result</div><div class="ag-pre">{esc_code(step.get("tool_result"), demo)}</div>'
                         )
                     timeline += (
                         '<div class="ag-step"><div class="ag-rail">'
