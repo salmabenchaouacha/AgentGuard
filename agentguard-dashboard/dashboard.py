@@ -10,6 +10,7 @@ The API keeps its original French values (status "alerte", severity
 import html
 import json
 import os
+import re
 import time
 
 import httpx
@@ -126,7 +127,7 @@ html, body, [class*="css"], .stApp { font-family: 'Inter', system-ui, sans-serif
 .ag-chip-final { background: rgba(52, 211, 153, .12); color: #6EE7B7; border-color: rgba(52, 211, 153, .3); }
 .ag-reason { color: var(--ag-text); font-size: 13px; line-height: 1.5; margin-top: 6px; }
 .ag-k { font-size: 10.5px; color: var(--ag-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin: 8px 0 3px; }
-.stMarkdown pre.ag-pre, pre.ag-pre {
+.ag-pre {
   font-family: 'JetBrains Mono', monospace !important; font-size: 11.5px !important; line-height: 1.45 !important;
   background: var(--ag-code-bg) !important; color: var(--ag-code-text) !important;
   border: 1px solid var(--ag-border) !important; border-radius: 7px !important;
@@ -204,7 +205,7 @@ def esc(value) -> str:
 
 
 def esc_code(value) -> str:
-    """Like esc(), but keeps line breaks for a <pre> block.
+    """Like esc(), but keeps line breaks (for an .ag-pre block).
     Short JSON stays on one line; long JSON is indented."""
     if value is None:
         return ""
@@ -221,6 +222,11 @@ def esc_code(value) -> str:
     else:
         text = str(value)
     return html.escape(text).replace("$", "&#36;").replace("\n", "&#10;")
+
+
+def esc_text(value) -> str:
+    """Escape agent text and render its **bold** markdown."""
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", esc(value))
 
 
 def render(markup: str) -> None:
@@ -320,6 +326,8 @@ with head_left:
 with head_right:
     if st.button("↻ Refresh", use_container_width=True):
         rerun()
+    toggle = st.toggle if hasattr(st, "toggle") else st.checkbox
+    demo = toggle("Demo layout", key="demo", help="Hides the left panel and fits a whole session on one screen, for screenshots.")
 
 if fetch_error:
     st.error(f"Cannot reach AgentGuard ({AGENTGUARD_URL}): {fetch_error}")
@@ -348,65 +356,69 @@ render(f'<div class="ag-kpis">{kpi_html}</div><div class="ag-bar">{bar_html}</di
 
 # ----------------------------------------------------------------- layout
 
-left, right = st.columns([1, 2], gap="large")
+if demo:
+    left, right = None, st.container()
+else:
+    left, right = st.columns([1, 2], gap="large")
 
-with left:
-    render('<div class="ag-section">Test a request</div>')
-    example_cols = st.columns(len(EXAMPLES))
-    for col, (name, text) in zip(example_cols, EXAMPLES.items()):
-        col.button(name, key=f"ex_{name}", on_click=set_message, args=(text,), use_container_width=True)
+if left is not None:
+    with left:
+        render('<div class="ag-section">Test a request</div>')
+        example_cols = st.columns(len(EXAMPLES))
+        for col, (name, text) in zip(example_cols, EXAMPLES.items()):
+            col.button(name, key=f"ex_{name}", on_click=set_message, args=(text,), use_container_width=True)
 
-    st.text_area(
-        "Customer message",
-        key="msg",
-        height=90,
-        placeholder="I want a refund for order 1001...",
-        label_visibility="collapsed",
-    )
-    send = st.button("Send through AgentGuard", type="primary", use_container_width=True)
-    if send and not st.session_state.msg.strip():
-        st.warning("Write a message before sending.")
-    elif send:
-        with st.spinner("Analyzing… (up to 2 minutes if the agent is waking up)"):
-            try:
-                result = httpx.post(
-                    f"{AGENTGUARD_URL}/agent/query",
-                    json={"message": st.session_state.msg.strip()},
-                    timeout=QUERY_TIMEOUT,
-                ).json()
-            except Exception as e:  # noqa: BLE001
-                result = {"status": "erreur", "detail": str(e)}
-        st.session_state.flash = result
-        if result.get("session_id"):
-            st.session_state.selected = result["session_id"]
-        rerun()
-
-    render('<div class="ag-section" style="margin-top:22px">Recent sessions</div>')
-    filter_col, search_col = st.columns([1, 1.4])
-    chosen_filter = filter_col.selectbox("Status", list(FILTERS), label_visibility="collapsed")
-    search = search_col.text_input("Search", placeholder="Search…", label_visibility="collapsed")
-
-    wanted = FILTERS[chosen_filter]
-    visible = [
-        s for s in sessions
-        if (wanted is None or s.get("status") == wanted)
-        and search.lower() in str(s.get("user_request", "")).lower()
-    ]
-
-    if not visible:
-        render('<div class="ag-empty"><b>No sessions</b>Send a request to get started.</div>')
-    for s in visible:
-        icon = STATUS.get(s.get("status"), {}).get("icon", "•")
-        text = str(s.get("user_request", "")).replace("\n", " ")
-        button_label = f"{icon}  {text[:58]}{'…' if len(text) > 58 else ''}"
-        st.button(
-            button_label,
-            key=f"s_{s['id']}",
-            on_click=select_session,
-            args=(s["id"],),
-            use_container_width=True,
-            type="primary" if s["id"] == st.session_state.selected else "secondary",
+        st.text_area(
+            "Customer message",
+            key="msg",
+            height=90,
+            placeholder="I want a refund for order 1001...",
+            label_visibility="collapsed",
         )
+        send = st.button("Send through AgentGuard", type="primary", use_container_width=True)
+        if send and not st.session_state.msg.strip():
+            st.warning("Write a message before sending.")
+        elif send:
+            with st.spinner("Analyzing… (up to 2 minutes if the agent is waking up)"):
+                try:
+                    result = httpx.post(
+                        f"{AGENTGUARD_URL}/agent/query",
+                        json={"message": st.session_state.msg.strip()},
+                        timeout=QUERY_TIMEOUT,
+                    ).json()
+                except Exception as e:  # noqa: BLE001
+                    result = {"status": "erreur", "detail": str(e)}
+            st.session_state.flash = result
+            if result.get("session_id"):
+                st.session_state.selected = result["session_id"]
+            rerun()
+
+        render('<div class="ag-section" style="margin-top:22px">Recent sessions</div>')
+        filter_col, search_col = st.columns([1, 1.4])
+        chosen_filter = filter_col.selectbox("Status", list(FILTERS), label_visibility="collapsed")
+        search = search_col.text_input("Search", placeholder="Search…", label_visibility="collapsed")
+
+        wanted = FILTERS[chosen_filter]
+        visible = [
+            s for s in sessions
+            if (wanted is None or s.get("status") == wanted)
+            and search.lower() in str(s.get("user_request", "")).lower()
+        ]
+
+        if not visible:
+            render('<div class="ag-empty"><b>No sessions</b>Send a request to get started.</div>')
+        for s in visible:
+            icon = STATUS.get(s.get("status"), {}).get("icon", "•")
+            text = str(s.get("user_request", "")).replace("\n", " ")
+            button_label = f"{icon}  {text[:58]}{'…' if len(text) > 58 else ''}"
+            st.button(
+                button_label,
+                key=f"s_{s['id']}",
+                on_click=select_session,
+                args=(s["id"],),
+                use_container_width=True,
+                type="primary" if s["id"] == st.session_state.selected else "secondary",
+            )
 
 with right:
     flash = st.session_state.flash
@@ -430,7 +442,9 @@ with right:
     if not detail:
         render(
             '<div class="ag-empty"><b>No session selected</b>'
-            'Pick a session on the left to inspect its trajectory.</div>'
+            + ('Turn off Demo layout to pick a session.' if demo
+               else 'Pick a session on the left to inspect its trajectory.')
+            + '</div>'
         )
     else:
         session = detail["session"]
@@ -438,73 +452,80 @@ with right:
         alerts = detail.get("alerts") or []
         judgments = detail.get("judgments") or []
 
-        render(
-            '<div class="ag-card ag-card-accent">'
-            f'<div class="ag-row"><span class="ag-section" style="margin:0">Customer request</span>'
-            f'{badge(session.get("status"))}</div>'
-            f'<div class="ag-request">{esc(session.get("user_request"))}</div>'
-            f'<div class="ag-meta">session {esc(session.get("id", selected))}</div>'
-            '</div>'
-        )
-
-        if alerts:
-            render(f'<div class="ag-section">Rule alerts · {len(alerts)}</div>')
-            alerts_html = ""
-            for a in alerts:
-                severity = str(a.get("severity", "")).lower()
-                color = SEVERITY_COLORS.get(severity, "#FBBF24")
-                alerts_html += (
-                    f'<div class="ag-alert" style="border-left-color:{color}">'
-                    f'<span class="ag-alert-rule">{esc(a.get("rule_triggered"))}</span>'
-                    f'<span class="ag-alert-meta">severity <b style="color:{color}">{esc(label(SEVERITY_LABELS, severity))}</b>'
-                    f' · step {esc(a.get("step_number"))}</span></div>'
-                )
-            render(alerts_html)
-
-        if judgments:
-            render('<div class="ag-section">AI judge verdict</div>')
-            for j in judgments:
-                gravity = str(j.get("gravite", "")).lower()
-                color = SEVERITY_COLORS.get(gravity, "#BBC9DD")
-                anomaly = bool(j.get("anomalie_detectee"))
-                anomaly_color = "#F87171" if anomaly else "#34D399"
-                render(
-                    '<div class="ag-card"><div class="ag-verdict-grid">'
-                    f'<div class="ag-verdict-cell"><div>Anomaly</div>'
-                    f'<div style="color:{anomaly_color}">{"Detected" if anomaly else "None"}</div></div>'
-                    f'<div class="ag-verdict-cell"><div>Severity</div>'
-                    f'<div style="color:{color}">{esc(label(SEVERITY_LABELS, gravity)) or "—"}</div></div>'
-                    f'<div class="ag-verdict-cell"><div>Recommended action</div>'
-                    f'<div>{esc(label(ACTION_LABELS, j.get("action_recommandee"))) or "—"}</div></div>'
-                    '</div>'
-                    f'<div class="ag-k" style="margin-top:0">Reasoning</div>'
-                    f'<div class="ag-reason" style="margin-top:4px">{esc(j.get("raison"))}</div>'
-                    '</div>'
-                )
-
-        render(f'<div class="ag-section">Agent trajectory · {len(steps)} step(s)</div>')
-        if not steps:
-            render('<div class="ag-empty">No steps recorded for this session.</div>')
+        if demo:
+            summary_col, traj_col = st.columns([1, 1.15], gap="medium")
         else:
-            timeline = ""
-            for step in steps:
-                tool = step.get("tool_called")
-                chip = (
-                    f'<span class="ag-chip">{esc(tool)}</span>'
-                    if tool
-                    else '<span class="ag-chip ag-chip-final">final answer</span>'
-                )
-                body = chip
-                if step.get("reasoning"):
-                    body += f'<div class="ag-reason">{esc(step["reasoning"])}</div>'
-                if tool:
-                    body += (
-                        f'<div class="ag-k">Parameters</div><pre class="ag-pre">{esc_code(step.get("tool_params"))}</pre>'
-                        f'<div class="ag-k">Result</div><pre class="ag-pre">{esc_code(step.get("tool_result"))}</pre>'
+            summary_col, traj_col = st.container(), st.container()
+
+        with summary_col:
+            render(
+                '<div class="ag-card ag-card-accent">'
+                f'<div class="ag-row"><span class="ag-section" style="margin:0">Customer request</span>'
+                f'{badge(session.get("status"))}</div>'
+                f'<div class="ag-request">{esc(session.get("user_request"))}</div>'
+                f'<div class="ag-meta">session {esc(session.get("id", selected))}</div>'
+                '</div>'
+            )
+
+            if alerts:
+                render(f'<div class="ag-section">Rule alerts · {len(alerts)}</div>')
+                alerts_html = ""
+                for a in alerts:
+                    severity = str(a.get("severity", "")).lower()
+                    color = SEVERITY_COLORS.get(severity, "#FBBF24")
+                    alerts_html += (
+                        f'<div class="ag-alert" style="border-left-color:{color}">'
+                        f'<span class="ag-alert-rule">{esc(a.get("rule_triggered"))}</span>'
+                        f'<span class="ag-alert-meta">severity <b style="color:{color}">{esc(label(SEVERITY_LABELS, severity))}</b>'
+                        f' · step {esc(a.get("step_number"))}</span></div>'
                     )
-                timeline += (
-                    '<div class="ag-step"><div class="ag-rail">'
-                    f'<span class="ag-dot">{esc(step.get("step_number"))}</span></div>'
-                    f'<div class="ag-step-body">{body}</div></div>'
-                )
-            render(f'<div>{timeline}</div>')
+                render(alerts_html)
+
+            if judgments:
+                render('<div class="ag-section">AI judge verdict</div>')
+                for j in judgments:
+                    gravity = str(j.get("gravite", "")).lower()
+                    color = SEVERITY_COLORS.get(gravity, "#BBC9DD")
+                    anomaly = bool(j.get("anomalie_detectee"))
+                    anomaly_color = "#F87171" if anomaly else "#34D399"
+                    render(
+                        '<div class="ag-card"><div class="ag-verdict-grid">'
+                        f'<div class="ag-verdict-cell"><div>Anomaly</div>'
+                        f'<div style="color:{anomaly_color}">{"Detected" if anomaly else "None"}</div></div>'
+                        f'<div class="ag-verdict-cell"><div>Severity</div>'
+                        f'<div style="color:{color}">{esc(label(SEVERITY_LABELS, gravity)) or "—"}</div></div>'
+                        f'<div class="ag-verdict-cell"><div>Recommended action</div>'
+                        f'<div>{esc(label(ACTION_LABELS, j.get("action_recommandee"))) or "—"}</div></div>'
+                        '</div>'
+                        f'<div class="ag-k" style="margin-top:0">Reasoning</div>'
+                        f'<div class="ag-reason" style="margin-top:4px">{esc(j.get("raison"))}</div>'
+                        '</div>'
+                    )
+
+        with traj_col:
+            render(f'<div class="ag-section">Agent trajectory · {len(steps)} step(s)</div>')
+            if not steps:
+                render('<div class="ag-empty">No steps recorded for this session.</div>')
+            else:
+                timeline = ""
+                for step in steps:
+                    tool = step.get("tool_called")
+                    chip = (
+                        f'<span class="ag-chip">{esc(tool)}</span>'
+                        if tool
+                        else '<span class="ag-chip ag-chip-final">final answer</span>'
+                    )
+                    body = chip
+                    if step.get("reasoning"):
+                        body += f'<div class="ag-reason">{esc_text(step["reasoning"])}</div>'
+                    if tool:
+                        body += (
+                            f'<div class="ag-k">Parameters</div><div class="ag-pre">{esc_code(step.get("tool_params"))}</div>'
+                            f'<div class="ag-k">Result</div><div class="ag-pre">{esc_code(step.get("tool_result"))}</div>'
+                        )
+                    timeline += (
+                        '<div class="ag-step"><div class="ag-rail">'
+                        f'<span class="ag-dot">{esc(step.get("step_number"))}</span></div>'
+                        f'<div class="ag-step-body">{body}</div></div>'
+                    )
+                render(f'<div>{timeline}</div>')
